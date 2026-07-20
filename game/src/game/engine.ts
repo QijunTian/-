@@ -24,8 +24,9 @@ function cloneItems(items: BoardItem[]): BoardItem[] {
 
 export function createLevel(config: LevelConfig, seed: number, failCount = 0): LevelRuntime {
   let shakes = config.freeShakes
-  // 连败安抚：不改规则，只多给一次颠锅
-  if (failCount >= 3) shakes += 1
+  // 连败安抚：不改规则，只多给颠锅（第2次起+1，第4次起再+1）
+  if (failCount >= 2) shakes += 1
+  if (failCount >= 4) shakes += 1
 
   return {
     config,
@@ -145,17 +146,30 @@ export function shakePot(runtime: LevelRuntime, seed = Date.now()): { runtime: L
   const maxLayer = alive.reduce((m, i) => Math.max(m, i.layer), 0)
 
   for (const it of alive) {
-    it.x += (rand() - 0.5) * 36
-    it.y += (rand() - 0.5) * 36
+    it.x += (rand() - 0.5) * 42
+    it.y += (rand() - 0.5) * 42
+    // 避免颠出锅外太远
+    it.x = Math.min(300, Math.max(40, it.x))
+    it.y = Math.min(430, Math.max(120, it.y))
   }
 
+  // 优先抬起被压物体；至少尝试露出 4 个新目标
   const covered = alive.filter((i) => !isItemClickable(i, items))
-  const liftCount = Math.min(3, covered.length)
+  const liftCount = Math.min(4, covered.length)
+  // 打乱后按顺序抬，减少重复抽中同一块
+  for (let i = covered.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    const tmp = covered[i]!
+    covered[i] = covered[j]!
+    covered[j] = tmp
+  }
   for (let i = 0; i < liftCount; i++) {
-    const pick = covered[Math.floor(rand() * covered.length)]!
+    const pick = covered[i]!
     pick.layer = maxLayer + 1 + i
-    pick.x += (rand() - 0.5) * 20
-    pick.y += (rand() - 0.5) * 20
+    pick.x += (rand() - 0.5) * 28
+    pick.y += (rand() - 0.5) * 28
+    pick.x = Math.min(300, Math.max(40, pick.x))
+    pick.y = Math.min(430, Math.max(120, pick.y))
   }
 
   const afterClickable = items.filter((i) => isItemClickable(i, items))

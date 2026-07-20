@@ -8,6 +8,7 @@ import {
   startTutorial,
   tryPick,
 } from './engine.ts'
+import { ITEM_CATALOG } from './items.ts'
 import { drawFrame, hitTest, logicalSize } from './renderer.ts'
 import type { GamePhase, LevelRuntime } from './types.ts'
 
@@ -22,6 +23,7 @@ export class GameApp {
   private phase: GamePhase = 'home'
   private blockedFlashUid: string | null = null
   shakePulse = 0
+  private matchPulse = 0
   private failStreak = 0
   private lastFailLine = ''
   private lastWinLine = ''
@@ -63,8 +65,9 @@ export class GameApp {
     this.canvas.style.height = '100%'
   }
 
-  private setControls(html: string): void {
+  private setControls(html: string, mode: 'home' | 'play' | 'none' = 'none'): void {
     const el = this.root.querySelector('#controls')!
+    el.className = `controls controls-${mode}`
     el.innerHTML = html
     el.querySelectorAll('[data-action]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -77,18 +80,20 @@ export class GameApp {
   private showHome(): void {
     this.phase = 'home'
     this.runtime = null
-    this.overlay.classList.add('hidden')
-    this.overlay.innerHTML = ''
-    this.setControls(`
+    this.hideOverlay()
+    this.setControls(
+      `
       <div class="home-panel">
-        <h1>摸鱼锅</h1>
-        <p>三消堆叠 · 职场压力炖一锅<br/>点三个相同，颠锅露出下层</p>
+        <p>三消堆叠 · 职场压力炖一锅<br/>点亮金色边框的，才能放进餐盘</p>
         <button data-action="start-tutorial" class="btn primary">开始试锅</button>
         <button data-action="start-challenge" class="btn ghost">直接今日挑战</button>
         <p class="meta">锅贴收集：${this.stickerCount()} 张</p>
       </div>
-    `)
+    `,
+      'home',
+    )
   }
+
 
   private stickerCount(): number {
     try {
@@ -125,11 +130,14 @@ export class GameApp {
   }
 
   private renderPlayingControls(): void {
-    this.setControls(`
+    this.setControls(
+      `
       <button data-action="shake" class="btn primary">颠锅 (${this.runtime?.shakesLeft ?? 0})</button>
       <button data-action="ad-shake" class="btn ghost">看广告+2颠锅</button>
       <button data-action="home" class="btn tiny">回首页</button>
-    `)
+    `,
+      'play',
+    )
   }
 
   private async onAction(action: string): Promise<void> {
@@ -253,8 +261,19 @@ export class GameApp {
       this.runtime.hintText = '被压住了，先消上层或颠锅'
       window.setTimeout(() => {
         this.blockedFlashUid = null
-      }, 180)
+      }, 220)
       return
+    }
+
+    if (event.type === 'matched') {
+      this.matchPulse = 1
+      const name = ITEM_CATALOG[event.itemType].name
+      this.runtime.hintText = `消掉了 ${name}`
+    }
+
+    if (event.type === 'picked') {
+      const left = this.runtime.config.slotCapacity - this.runtime.slot.length
+      if (left <= 2) this.runtime.hintText = `餐盘只剩 ${left} 格`
     }
 
     if (event.type === 'lost') {
@@ -293,7 +312,7 @@ export class GameApp {
         void this.onAction((btn as HTMLElement).dataset.action ?? '')
       })
     })
-    this.setControls('')
+    this.setControls('', 'none')
   }
 
   private showWin(): void {
@@ -316,18 +335,27 @@ export class GameApp {
         void this.onAction((btn as HTMLElement).dataset.action ?? '')
       })
     })
-    this.setControls('')
+    this.setControls('', 'none')
   }
 
   private loop = (): void => {
     if (this.shakePulse > 0) {
       this.shakePulse = Math.max(0, this.shakePulse - 0.04)
     }
+    if (this.matchPulse > 0) {
+      this.matchPulse = Math.max(0, this.matchPulse - 0.05)
+    }
 
     if (this.phase === 'home') {
       this.drawHomeBackdrop()
     } else if (this.runtime) {
-      drawFrame(this.ctx, this.runtime, this.blockedFlashUid, this.shakePulse)
+      drawFrame(
+        this.ctx,
+        this.runtime,
+        this.blockedFlashUid,
+        this.shakePulse,
+        this.matchPulse,
+      )
     }
 
     this.raf = requestAnimationFrame(this.loop)

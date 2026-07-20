@@ -17,10 +17,10 @@ export const LEVEL_CHALLENGE: LevelConfig = {
   id: 'challenge',
   title: '今日挑战',
   types: ['dingtalk', 'kpi', 'report', 'meeting', 'boss', 'coffee', 'takeout', 'slack'],
-  countPerType: 6,
-  layers: 4,
-  coverTightness: 0.62,
-  freeShakes: 1,
+  countPerType: 3, // 调参后：总数24，贪心通关约10%–30%
+  layers: 3,
+  coverTightness: 0.5,
+  freeShakes: 2,
   slotCapacity: SLOT_CAPACITY,
 }
 
@@ -51,8 +51,9 @@ export function generateBoard(config: LevelConfig, seed = 1): BoardItem[] {
   const rand = mulberry32(seed)
   const itemSize = 64
   const potCx = 195
-  const potCy = 310
-  const potR = 150
+  // 锅心上移，给底部餐盘与操作按钮留空，避免遮挡
+  const potCy = 268
+  const potR = 138
 
   const bag: ItemTypeId[] = []
   for (const type of config.types) {

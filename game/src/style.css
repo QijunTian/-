@@ -50,12 +50,21 @@ body {
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: 16px;
+  bottom: 14px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
   pointer-events: none;
+  z-index: 2;
+}
+
+.controls-play {
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(12, 8, 5, 0.72);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(251, 191, 36, 0.18);
 }
 
 .controls > * {
