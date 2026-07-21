@@ -84,10 +84,10 @@ export class GameApp {
     this.setControls(
       `
       <div class="home-panel">
-        <p>把压力甩进锅里炖掉。<br/>越往后越难：<strong>锅有容量、带壳、会跑、出老板</strong>。</p>
+        <p>规则只有一句：甩进锅里炖。<br/>难在<strong>乱炖夹生、半熟占锅、金色诱饵、收官缩容</strong>。</p>
         <button class="btn primary" data-action="start-shift">开始这一班</button>
         <button class="btn ghost" data-action="start-overtime">加班高压灶</button>
-        <p class="meta">第1波轻松 → 第2波破壳/乱跑 → 第3波老板催命</p>
+        <p class="meta">看起来简单 · 一乱炖就“差一点”</p>
       </div>
     `,
       'home',

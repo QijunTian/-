@@ -1,5 +1,5 @@
 import { STRESS_CATALOG } from './catalog.ts'
-import { H, POT, W, progressOf } from './sim.ts'
+import { effectivePotCap, H, POT, W, progressOf } from './sim.ts'
 import type { SimState } from './types.ts'
 
 export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
@@ -59,6 +59,14 @@ export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
       ctx.font = 'bold 10px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText('壳', 0, it.r + 14)
+    } else if (it.bait) {
+      ctx.shadowColor = '#fde047'
+      ctx.shadowBlur = 16
+      ctx.strokeStyle = '#facc15'
+      ctx.lineWidth = 3
+      circle(ctx, 0, 0, it.r)
+      ctx.stroke()
+      ctx.shadowBlur = 0
     } else {
       ctx.strokeStyle = it.boss ? '#f43f5e' : it.place === 'pot' ? '#fde68a' : '#fff7ed'
       ctx.lineWidth = it.boss ? 3 : 2
@@ -70,9 +78,9 @@ export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#fff'
-    ctx.fillText(def.emoji, 0, -6)
+    ctx.fillText(it.bait ? '🐟' : def.emoji, 0, -6)
     ctx.font = 'bold 11px "PingFang SC", sans-serif'
-    ctx.fillText(it.boss ? '大老板' : def.name, 0, 12)
+    ctx.fillText(it.bait ? '摸鱼?' : it.boss ? '大老板' : def.name, 0, 12)
 
     if (it.place === 'pot') {
       ctx.strokeStyle = 'rgba(255,255,255,0.4)'
@@ -98,7 +106,7 @@ export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
 function drawPot(ctx: CanvasRenderingContext2D, state: SimState): void {
   const { cx, cy, rx, ry } = POT
   const potN = state.items.filter((i) => i.place === 'pot').length
-  const full = potN >= state.spec.potCap
+  const full = potN >= effectivePotCap(state)
 
   ctx.fillStyle = '#5b3418'
   ctx.beginPath()
@@ -106,26 +114,28 @@ function drawPot(ctx: CanvasRenderingContext2D, state: SimState): void {
   ctx.fill()
 
   const heat = state.potHeat
+  const cap = effectivePotCap(state)
   const broth = ctx.createRadialGradient(cx, cy, 10, cx, cy, rx)
-  broth.addColorStop(0, full ? '#fb7185' : heat > 0.5 ? '#fda4af' : '#fbbf24')
-  broth.addColorStop(0.6, full ? '#e11d48' : heat > 0.5 ? '#f97316' : '#d97706')
+  broth.addColorStop(0, state.claggy ? '#a8a29e' : full ? '#fb7185' : heat > 0.5 ? '#fda4af' : '#fbbf24')
+  broth.addColorStop(0.6, state.claggy ? '#78716c' : full ? '#e11d48' : heat > 0.5 ? '#f97316' : '#d97706')
   broth.addColorStop(1, '#7c2d12')
   ctx.fillStyle = broth
   ctx.beginPath()
   ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
   ctx.fill()
-  ctx.strokeStyle = full ? '#fecaca' : '#fcd34d'
+  ctx.strokeStyle = state.claggy ? '#d6d3d1' : full ? '#fecaca' : '#fcd34d'
   ctx.lineWidth = 5
   ctx.stroke()
 
   ctx.fillStyle = 'rgba(255,247,237,0.9)'
   ctx.font = 'bold 12px "PingFang SC", sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText(
-    full ? `锅满 ${potN}/${state.spec.potCap} · 快炖！` : `摸鱼锅 ${potN}/${state.spec.potCap} · 点我加速`,
-    cx,
-    cy + ry + 22,
-  )
+  const label = state.claggy
+    ? `夹生糊锅 ${potN}/${cap}`
+    : full
+      ? `锅满 ${potN}/${cap} · 半熟也占位`
+      : `摸鱼锅 ${potN}/${cap} · 点我加速`
+  ctx.fillText(label, cx, cy + ry + 22)
 }
 
 function drawHud(ctx: CanvasRenderingContext2D, state: SimState): void {

@@ -40,6 +40,8 @@ export interface DeskItem {
   roam: boolean
   /** boss 更耐煮 */
   boss: boolean
+  /** 诱饵：看起来好甩，实际会引来更多压力 */
+  bait: boolean
 }
 
 export interface Particle {
@@ -86,4 +88,6 @@ export interface SimState {
   fullAcc: number
   wave: Wave
   sameTypeStreak: number
+  /** 是否处于夹生糊锅（看起来在炖，其实几乎不动） */
+  claggy: boolean
 }
