@@ -2,14 +2,9 @@ import { STRESS_CATALOG } from './catalog.ts'
 import { H, POT, W, progressOf } from './sim.ts'
 import type { SimState } from './types.ts'
 
-export function logicalSize(): { w: number; h: number } {
-  return { w: W, h: H }
-}
-
 export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
   ctx.clearRect(0, 0, W, H)
 
-  // 桌面氛围：越干净越亮
   const calm = state.calm
   const g = ctx.createLinearGradient(0, 0, 0, H)
   g.addColorStop(0, lerpColor('#2a1810', '#1f2937', calm))
@@ -18,7 +13,12 @@ export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
   ctx.fillStyle = g
   ctx.fillRect(0, 0, W, H)
 
-  // 桌面区域
+  // 波次色调：后期更压迫
+  if (state.wave >= 2) {
+    ctx.fillStyle = `rgba(127, 29, 29, ${0.06 * state.wave})`
+    ctx.fillRect(0, 0, W, H)
+  }
+
   ctx.fillStyle = `rgba(251, 191, 36, ${0.05 + calm * 0.08})`
   roundRect(ctx, 24, 96, W - 48, 300, 22)
   ctx.fill()
@@ -27,16 +27,8 @@ export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
   roundRect(ctx, 24, 96, W - 48, 300, 22)
   ctx.stroke()
 
-  if (calm > 0.55) {
-    ctx.fillStyle = `rgba(167, 243, 208, ${calm - 0.45})`
-    ctx.font = '12px "PingFang SC", sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('桌面正在变干净…', W / 2, 120)
-  }
-
   drawPot(ctx, state)
 
-  // 物品：桌面/飞行在上，锅内略小
   const ordered = [...state.items].sort((a, b) => {
     const za = a.place === 'pot' ? 0 : a.place === 'desk' ? 1 : 2
     const zb = b.place === 'pot' ? 0 : b.place === 'desk' ? 1 : 2
@@ -50,25 +42,40 @@ export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
     ctx.globalAlpha = alpha
     ctx.translate(it.x, it.y)
     ctx.scale(scale, scale)
+
     ctx.fillStyle = 'rgba(0,0,0,0.25)'
     circle(ctx, 3, 4, it.r)
     ctx.fill()
     ctx.fillStyle = def.color
     circle(ctx, 0, 0, it.r)
     ctx.fill()
-    ctx.strokeStyle = it.place === 'pot' ? '#fde68a' : '#fff7ed'
-    ctx.lineWidth = 2
-    circle(ctx, 0, 0, it.r)
-    ctx.stroke()
-    ctx.font = '18px "Segoe UI Emoji", sans-serif'
+
+    if (it.shell > 0) {
+      ctx.strokeStyle = '#e7e5e4'
+      ctx.lineWidth = 4
+      circle(ctx, 0, 0, it.r + 3)
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'
+      ctx.font = 'bold 10px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('壳', 0, it.r + 14)
+    } else {
+      ctx.strokeStyle = it.boss ? '#f43f5e' : it.place === 'pot' ? '#fde68a' : '#fff7ed'
+      ctx.lineWidth = it.boss ? 3 : 2
+      circle(ctx, 0, 0, it.r)
+      ctx.stroke()
+    }
+
+    ctx.font = `${it.boss ? 22 : 18}px "Segoe UI Emoji", sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#fff'
     ctx.fillText(def.emoji, 0, -6)
     ctx.font = 'bold 11px "PingFang SC", sans-serif'
-    ctx.fillText(def.name, 0, 12)
+    ctx.fillText(it.boss ? '大老板' : def.name, 0, 12)
+
     if (it.place === 'pot') {
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)'
       ctx.lineWidth = 3
       ctx.beginPath()
       ctx.arc(0, 0, it.r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * it.cook)
@@ -90,6 +97,9 @@ export function drawSim(ctx: CanvasRenderingContext2D, state: SimState): void {
 
 function drawPot(ctx: CanvasRenderingContext2D, state: SimState): void {
   const { cx, cy, rx, ry } = POT
+  const potN = state.items.filter((i) => i.place === 'pot').length
+  const full = potN >= state.spec.potCap
+
   ctx.fillStyle = '#5b3418'
   ctx.beginPath()
   ctx.ellipse(cx, cy + 34, rx + 16, 34, 0, 0, Math.PI * 2)
@@ -97,53 +107,69 @@ function drawPot(ctx: CanvasRenderingContext2D, state: SimState): void {
 
   const heat = state.potHeat
   const broth = ctx.createRadialGradient(cx, cy, 10, cx, cy, rx)
-  broth.addColorStop(0, heat > 0.5 ? '#fda4af' : '#fbbf24')
-  broth.addColorStop(0.6, heat > 0.5 ? '#f97316' : '#d97706')
+  broth.addColorStop(0, full ? '#fb7185' : heat > 0.5 ? '#fda4af' : '#fbbf24')
+  broth.addColorStop(0.6, full ? '#e11d48' : heat > 0.5 ? '#f97316' : '#d97706')
   broth.addColorStop(1, '#7c2d12')
   ctx.fillStyle = broth
   ctx.beginPath()
   ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
   ctx.fill()
-  ctx.strokeStyle = '#fcd34d'
+  ctx.strokeStyle = full ? '#fecaca' : '#fcd34d'
   ctx.lineWidth = 5
   ctx.stroke()
 
-  ctx.fillStyle = 'rgba(255,247,237,0.85)'
-  ctx.font = 'bold 13px "PingFang SC", sans-serif'
+  ctx.fillStyle = 'rgba(255,247,237,0.9)'
+  ctx.font = 'bold 12px "PingFang SC", sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText('摸鱼锅 · 点我加速炖', cx, cy + ry + 22)
+  ctx.fillText(
+    full ? `锅满 ${potN}/${state.spec.potCap} · 快炖！` : `摸鱼锅 ${potN}/${state.spec.potCap} · 点我加速`,
+    cx,
+    cy + ry + 22,
+  )
 }
 
 function drawHud(ctx: CanvasRenderingContext2D, state: SimState): void {
   ctx.fillStyle = '#fff7ed'
-  ctx.font = 'bold 18px "PingFang SC", sans-serif'
+  ctx.font = 'bold 17px "PingFang SC", sans-serif'
   ctx.textAlign = 'left'
-  ctx.fillText(state.spec.title, 16, 32)
+  ctx.fillText(state.spec.title, 16, 28)
 
   const p = progressOf(state)
   ctx.fillStyle = 'rgba(255,255,255,0.12)'
-  roundRect(ctx, 16, 44, 200, 10, 6)
+  roundRect(ctx, 16, 40, 168, 10, 6)
   ctx.fill()
   ctx.fillStyle = '#86efac'
-  roundRect(ctx, 16, 44, Math.max(4, 200 * p), 10, 6)
+  roundRect(ctx, 16, 40, Math.max(4, 168 * p), 10, 6)
   ctx.fill()
+
+  // 波次胶囊
+  ctx.fillStyle = state.wave === 1 ? '#334155' : state.wave === 2 ? '#9a3412' : '#7f1d1d'
+  roundRect(ctx, 16, 56, 72, 18, 9)
+  ctx.fill()
+  ctx.fillStyle = '#fde68a'
+  ctx.font = 'bold 11px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText(`第${state.wave}波`, 52, 69)
+
+  ctx.textAlign = 'left'
   ctx.fillStyle = '#bbf7d0'
   ctx.font = '11px sans-serif'
-  ctx.fillText(`下班进度 ${Math.floor(p * 100)}%`, 224, 53)
+  ctx.fillText(`${Math.floor(p * 100)}%`, 192, 49)
 
   ctx.textAlign = 'right'
   ctx.fillStyle = '#fde68a'
-  ctx.font = '12px "PingFang SC", sans-serif'
-  ctx.fillText(state.hint, W - 16, 32)
+  ctx.font = '11px "PingFang SC", sans-serif'
+  const hint = state.hint.length > 18 ? `${state.hint.slice(0, 17)}…` : state.hint
+  ctx.fillText(hint, W - 16, 28)
 
   if (state.toast) {
     ctx.textAlign = 'center'
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'
-    roundRect(ctx, 50, 64, W - 100, 28, 10)
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    roundRect(ctx, 40, 78, W - 80, 28, 10)
     ctx.fill()
     ctx.fillStyle = '#fef3c7'
-    ctx.font = '13px "PingFang SC", sans-serif'
-    ctx.fillText(state.toast, W / 2, 80)
+    ctx.font = '12px "PingFang SC", sans-serif'
+    ctx.fillText(state.toast, W / 2, 94)
   }
 }
 
@@ -173,10 +199,7 @@ function roundRect(
 function lerpColor(a: string, b: string, t: number): string {
   const pa = hex(a)
   const pb = hex(b)
-  const r = Math.round(pa[0] + (pb[0] - pa[0]) * t)
-  const g = Math.round(pa[1] + (pb[1] - pa[1]) * t)
-  const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t)
-  return `rgb(${r},${g},${bl})`
+  return `rgb(${Math.round(pa[0] + (pb[0] - pa[0]) * t)},${Math.round(pa[1] + (pb[1] - pa[1]) * t)},${Math.round(pa[2] + (pb[2] - pa[2]) * t)})`
 }
 
 function hex(c: string): [number, number, number] {

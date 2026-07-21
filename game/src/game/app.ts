@@ -84,10 +84,10 @@ export class GameApp {
     this.setControls(
       `
       <div class="home-panel">
-        <p>别消方块了。<br/>把上班压力<strong>甩进锅里炖掉</strong>，看桌面变干净。</p>
+        <p>把压力甩进锅里炖掉。<br/>越往后越难：<strong>锅有容量、带壳、会跑、出老板</strong>。</p>
         <button class="btn primary" data-action="start-shift">开始这一班</button>
-        <button class="btn ghost" data-action="start-overtime">加班局</button>
-        <p class="meta">学爆款的解压感：扔出去 · 变整洁 · 有完成感</p>
+        <button class="btn ghost" data-action="start-overtime">加班高压灶</button>
+        <p class="meta">第1波轻松 → 第2波破壳/乱跑 → 第3波老板催命</p>
       </div>
     `,
       'home',
@@ -219,7 +219,8 @@ export class GameApp {
     this.state = state
     this.lastPos = null
     if (event === 'throw-in') playSfx('splash')
-    else if (event === 'throw-miss') playSfx('miss')
+    else if (event === 'throw-miss' || event === 'pot-full') playSfx('miss')
+    else if (event === 'crack') playSfx('grab')
     this.afterSim()
   }
 

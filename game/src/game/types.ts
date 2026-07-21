@@ -20,7 +20,6 @@ export interface StressDef {
   name: string
   emoji: string
   color: string
-  /** 炖化所需“火候”，越小越好炖 */
   toughness: number
 }
 
@@ -32,11 +31,15 @@ export interface DeskItem {
   vx: number
   vy: number
   r: number
-  /** desk | flying | pot */
   place: 'desk' | 'flying' | 'pot'
-  /** 0–1 锅内炖化进度 */
   cook: number
   wobble: number
+  /** 外壳：1=要先甩裂，0=可直接进锅 */
+  shell: number
+  /** 是否会在桌面乱爬（中后期） */
+  roam: boolean
+  /** boss 更耐煮 */
+  boss: boolean
 }
 
 export interface Particle {
@@ -52,15 +55,17 @@ export interface Particle {
 export interface LevelSpec {
   id: string
   title: string
-  /** 本关总共要处理的压力数 */
   totalStress: number
-  /** 桌面同时存在上限 */
   deskCap: number
-  /** 生成间隔 ms */
+  /** 基础生成间隔，会随波次缩短 */
   spawnEveryMs: number
-  /** 锅内爆发所需已炖化个数 */
   burstNeed: number
+  /** 锅内同时最多几份，满了必须先炖 */
+  potCap: number
 }
+
+/** 1早班轻松 2下午加速 3临近下班高压 */
+export type Wave = 1 | 2 | 3
 
 export interface SimState {
   spec: LevelSpec
@@ -78,6 +83,7 @@ export interface SimState {
   spawnAcc: number
   dragUid: string | null
   calm: number
-  /** 桌面顶满持续时间，用于柔和失败 */
   fullAcc: number
+  wave: Wave
+  sameTypeStreak: number
 }

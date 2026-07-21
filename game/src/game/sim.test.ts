@@ -4,58 +4,139 @@ import {
   beginDrag,
   createSim,
   endDrag,
-  hitItem,
   POT,
   startShift,
   tapPot,
-  tick,
+  waveOf,
 } from './sim.ts'
 
-describe('stew catharsis loop', () => {
-  it('can throw a desk item into the pot', () => {
-    const state = startShift(42)
-    const target = state.items.find((i) => i.place === 'desk')
-    expect(target).toBeTruthy()
-    const dragged = beginDrag(state, target!.uid)
-    const res = endDrag(dragged, POT.cx, POT.cy, 0, 0.5)
-    expect(res.event).toBe('throw-in')
-    expect(res.state.items.some((i) => i.uid === target!.uid && i.place === 'pot')).toBe(true)
+describe('difficulty progression', () => {
+  it('wave rises with clear progress', () => {
+    expect(waveOf(0, 24)).toBe(1)
+    expect(waveOf(9, 24)).toBe(2)
+    expect(waveOf(18, 24)).toBe(3)
   })
 
-  it('cooking then bursting increases calm and clear count', () => {
-    let s = createSim(
-      { ...LEVEL_SHIFT, totalStress: 6, deskCap: 6, spawnEveryMs: 99999, burstNeed: 2 },
-      7,
-    )
-    for (const it of [...s.items]) {
-      if (it.place !== 'desk') continue
+  it('rejects throw when pot is full', () => {
+    let s = createSim({ ...LEVEL_SHIFT, potCap: 2, spawnEveryMs: 99999 }, 11)
+    const desk = s.items.filter((i) => i.place === 'desk').slice(0, 3)
+    for (const it of desk.slice(0, 2)) {
+      // 确保无壳
+      s = {
+        ...s,
+        items: s.items.map((x) => (x.uid === it.uid ? { ...x, shell: 0 } : x)),
+      }
       s = beginDrag(s, it.uid)
-      s = endDrag(s, POT.cx, POT.cy, 0, 1).state
+      const res = endDrag(s, POT.cx, POT.cy, 0, 1)
+      expect(res.event).toBe('throw-in')
+      s = res.state
     }
-    expect(s.items.some((i) => i.place === 'pot')).toBe(true)
-    const beforeCalm = s.calm
-    for (let i = 0; i < 12; i++) s = tapPot(s)
-    expect(s.bursts).toBeGreaterThan(0)
-    expect(s.cleared).toBeGreaterThan(0)
-    expect(s.calm).toBeGreaterThan(beforeCalm)
+    expect(s.items.filter((i) => i.place === 'pot').length).toBe(2)
+    const next = desk[2]!
+    s = {
+      ...s,
+      items: s.items.map((x) => (x.uid === next.uid ? { ...x, shell: 0 } : x)),
+    }
+    s = beginDrag(s, next.uid)
+    const blocked = endDrag(s, POT.cx, POT.cy, 0, 1)
+    expect(blocked.event).toBe('pot-full')
+    expect(blocked.state.items.find((i) => i.uid === next.uid)?.place).toBe('desk')
   })
 
-  it('hit test only selects desk items', () => {
-    const s = startShift(3)
-    const desk = s.items.find((i) => i.place === 'desk')!
-    expect(hitItem(s, desk.x, desk.y)?.uid).toBe(desk.uid)
+  it('shell requires two throws to enter pot', () => {
+    let s = startShift(5)
+    const target = s.items[0]!
+    s = {
+      ...s,
+      items: s.items.map((x) =>
+        x.uid === target.uid ? { ...x, shell: 1, place: 'desk', roam: false } : x,
+      ),
+    }
+    s = beginDrag(s, target.uid)
+    const crack = endDrag(s, POT.cx, POT.cy, 0, 1)
+    expect(crack.event).toBe('crack')
+    expect(crack.state.items.find((i) => i.uid === target.uid)?.shell).toBe(0)
+    expect(crack.state.items.find((i) => i.uid === target.uid)?.place).toBe('desk')
+
+    s = beginDrag(crack.state, target.uid)
+    const inn = endDrag(s, POT.cx, POT.cy, 0, 1)
+    expect(inn.event).toBe('throw-in')
+    expect(inn.state.items.find((i) => i.uid === target.uid)?.place).toBe('pot')
   })
 
-  it('auto simmer progresses cook without input', () => {
-    let s = startShift(9)
-    const one = s.items[0]!
-    s = beginDrag(s, one.uid)
-    s = endDrag(s, POT.cx, POT.cy, 0, 1).state
-    const pot = s.items.find((i) => i.place === 'pot')!
-    const cook0 = pot.cook
-    s = tick(s, 0.5)
-    const pot2 = s.items.find((i) => i.uid === pot.uid)
-    expect(pot2).toBeTruthy()
-    expect(pot2!.cook).toBeGreaterThan(cook0)
+  it('same-type in pot cooks faster than mixed', () => {
+    let mixed = createSim({ ...LEVEL_SHIFT, potCap: 4, spawnEveryMs: 99999 }, 2)
+    // 手工两锅：一类两同，一类不同
+    mixed.items = [
+      {
+        uid: 'a1',
+        type: 'dingtalk',
+        x: POT.cx,
+        y: POT.cy,
+        vx: 0,
+        vy: 0,
+        r: 28,
+        place: 'pot',
+        cook: 0.1,
+        wobble: 0,
+        shell: 0,
+        roam: false,
+        boss: false,
+      },
+      {
+        uid: 'a2',
+        type: 'dingtalk',
+        x: POT.cx,
+        y: POT.cy,
+        vx: 0,
+        vy: 0,
+        r: 28,
+        place: 'pot',
+        cook: 0.1,
+        wobble: 0,
+        shell: 0,
+        roam: false,
+        boss: false,
+      },
+    ]
+    const afterSame = tapPot(mixed)
+    const sameCook = afterSame.items.find((i) => i.uid === 'a1')!.cook
+
+    let diff = createSim({ ...LEVEL_SHIFT, potCap: 4, spawnEveryMs: 99999 }, 3)
+    diff.items = [
+      {
+        uid: 'b1',
+        type: 'dingtalk',
+        x: POT.cx,
+        y: POT.cy,
+        vx: 0,
+        vy: 0,
+        r: 28,
+        place: 'pot',
+        cook: 0.1,
+        wobble: 0,
+        shell: 0,
+        roam: false,
+        boss: false,
+      },
+      {
+        uid: 'b2',
+        type: 'kpi',
+        x: POT.cx,
+        y: POT.cy,
+        vx: 0,
+        vy: 0,
+        r: 28,
+        place: 'pot',
+        cook: 0.1,
+        wobble: 0,
+        shell: 0,
+        roam: false,
+        boss: false,
+      },
+    ]
+    const afterDiff = tapPot(diff)
+    const diffCook = afterDiff.items.find((i) => i.uid === 'b1')!.cook
+    expect(sameCook).toBeGreaterThan(diffCook)
   })
 })

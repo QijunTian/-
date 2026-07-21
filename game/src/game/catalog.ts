@@ -2,49 +2,47 @@ import type { LevelSpec, StressDef, StressId } from './types.ts'
 
 export const STRESS_CATALOG: Record<StressId, StressDef> = {
   dingtalk: { id: 'dingtalk', name: '钉钉', emoji: '🔔', color: '#3b82f6', toughness: 1 },
-  kpi: { id: 'kpi', name: 'KPI', emoji: '📉', color: '#ef4444', toughness: 1.2 },
+  kpi: { id: 'kpi', name: 'KPI', emoji: '📉', color: '#ef4444', toughness: 1.15 },
   meeting: { id: 'meeting', name: '会议', emoji: '📅', color: '#f59e0b', toughness: 1.1 },
-  boss: { id: 'boss', name: '老板', emoji: '🕶️', color: '#111827', toughness: 1.4 },
+  boss: { id: 'boss', name: '老板', emoji: '🕶️', color: '#111827', toughness: 1.55 },
   report: { id: 'report', name: '周报', emoji: '📄', color: '#a78bfa', toughness: 1 },
-  overtime: { id: 'overtime', name: '加班', emoji: '🌙', color: '#6366f1', toughness: 1.3 },
+  overtime: { id: 'overtime', name: '加班', emoji: '🌙', color: '#6366f1', toughness: 1.25 },
   email: { id: 'email', name: '邮件', emoji: '📧', color: '#14b8a6', toughness: 0.9 },
-  rent: { id: 'rent', name: '房租', emoji: '🔑', color: '#78716c', toughness: 1.15 },
+  rent: { id: 'rent', name: '房租', emoji: '🔑', color: '#78716c', toughness: 1.1 },
 }
 
-export const STRESS_ORDER: StressId[] = [
-  'dingtalk',
-  'kpi',
-  'meeting',
-  'email',
-  'report',
-  'boss',
-  'overtime',
-  'rent',
-]
+/** 波次解锁的压力池：越后越难炖、越烦人 */
+export const WAVE_POOL: Record<1 | 2 | 3, StressId[]> = {
+  1: ['email', 'dingtalk', 'report', 'meeting'],
+  2: ['email', 'dingtalk', 'report', 'meeting', 'kpi', 'rent'],
+  3: ['dingtalk', 'meeting', 'kpi', 'rent', 'overtime', 'boss'],
+}
 
 export const LEVEL_SHIFT: LevelSpec = {
   id: 'shift',
   title: '这一班·摸鱼锅',
-  totalStress: 18,
-  deskCap: 8,
-  spawnEveryMs: 1600,
+  totalStress: 24,
+  deskCap: 7,
+  spawnEveryMs: 1700,
   burstNeed: 3,
+  potCap: 4,
 }
 
 export const LEVEL_OVERTIME: LevelSpec = {
   id: 'overtime',
-  title: '加班局·多炖一会',
-  totalStress: 28,
-  deskCap: 10,
-  spawnEveryMs: 1300,
-  burstNeed: 4,
+  title: '加班局·高压灶',
+  totalStress: 36,
+  deskCap: 8,
+  spawnEveryMs: 1400,
+  burstNeed: 3,
+  potCap: 3,
 }
 
 export const TOAST_THROW: Record<StressId, string> = {
   dingtalk: '红点，下去吧',
   kpi: '指标进锅，心情起飞',
   meeting: '这会，我请它吃火锅',
-  boss: '老板？红烧的',
+  boss: '老板？得大火收汁',
   report: '周报变残页了',
   overtime: '加班也怕开水',
   email: '未读清零的声音真香',
@@ -60,6 +58,12 @@ export const CLEAR_LINES = [
 
 export const FAIL_LINES = [
   '桌面被钉钉淹没了…',
-  '加班潮把锅淹了',
-  '会议叠罗汉，今日输给工位',
+  '锅满了还硬塞，翻了',
+  '加班潮把工位淹了',
 ]
+
+export const WAVE_HINT: Record<1 | 2 | 3, string> = {
+  1: '早班：随便甩，同类更好炖',
+  2: '下午：有人带壳、会乱跑，注意锅容量',
+  3: '下班前：老板来了，锅更小更急',
+}
