@@ -1,4 +1,5 @@
-import { pickFailLine, pickWinLine } from './copy.ts'
+import { pickFailLine, pickToast, pickWinLine } from './copy.ts'
+import { ITEM_CATALOG, STRESS_TYPES } from './items.ts'
 import {
   generateBoard,
   isItemClickable,
@@ -9,10 +10,17 @@ import {
 import type { BoardItem, ItemTypeId, LevelConfig, LevelRuntime } from './types.ts'
 
 export type EngineEvent =
-  | { type: 'picked'; itemType: ItemTypeId }
+  | { type: 'picked'; itemType: ItemTypeId; heat: number }
   | { type: 'blocked' }
-  | { type: 'matched'; itemType: ItemTypeId }
+  | {
+      type: 'matched'
+      itemType: ItemTypeId
+      combo: number
+      bonus?: 'slack-clear' | 'coffee-shake' | 'boil'
+      bonusDetail?: string
+    }
   | { type: 'shaken'; revealed: number }
+  | { type: 'boiled'; revealed: number }
   | { type: 'won'; line: string }
   | { type: 'lost'; line: string }
   | { type: 'revived' }
@@ -24,7 +32,6 @@ function cloneItems(items: BoardItem[]): BoardItem[] {
 
 export function createLevel(config: LevelConfig, seed: number, failCount = 0): LevelRuntime {
   let shakes = config.freeShakes
-  // 连败安抚：不改规则，只多给颠锅（第2次起+1，第4次起再+1）
   if (failCount >= 2) shakes += 1
   if (failCount >= 4) shakes += 1
 
@@ -35,7 +42,13 @@ export function createLevel(config: LevelConfig, seed: number, failCount = 0): L
     shakesLeft: shakes,
     failCount,
     status: 'playing',
-    hintText: config.id === 'tutorial' ? '点三个相同的放进餐盘即可消除' : '差一口也别停',
+    hintText:
+      config.id === 'tutorial'
+        ? '点金色边框；摸鱼能甩锅，咖啡能续命'
+        : '别让热度烧满——连消才是王道',
+    combo: 0,
+    heat: 0,
+    toast: '',
   }
 }
 
@@ -43,7 +56,11 @@ export function remainingItems(runtime: LevelRuntime): BoardItem[] {
   return runtime.items.filter((i) => !i.removed)
 }
 
-function eliminateTriples(slot: ItemTypeId[]): { slot: ItemTypeId[]; matched: ItemTypeId | null } {
+function eliminateTriples(slot: ItemTypeId[]): {
+  slot: ItemTypeId[]
+  matched: ItemTypeId | null
+  matchCount: number
+} {
   const counts = new Map<ItemTypeId, number>()
   for (const t of slot) counts.set(t, (counts.get(t) ?? 0) + 1)
 
@@ -54,7 +71,7 @@ function eliminateTriples(slot: ItemTypeId[]): { slot: ItemTypeId[]; matched: It
       break
     }
   }
-  if (!matched) return { slot, matched: null }
+  if (!matched) return { slot, matched: null, matchCount: 0 }
 
   let removeLeft = 3
   const next: ItemTypeId[] = []
@@ -65,12 +82,72 @@ function eliminateTriples(slot: ItemTypeId[]): { slot: ItemTypeId[]; matched: It
     }
     next.push(t)
   }
-  // 可能一次凑出多组，递归清
   const again = eliminateTriples(next)
-  return { slot: again.slot, matched: matched }
+  return {
+    slot: again.slot,
+    matched,
+    matchCount: 1 + again.matchCount,
+  }
 }
 
-export function tryPick(runtime: LevelRuntime, uid: string): { runtime: LevelRuntime; event: EngineEvent } {
+function applySlackBonus(
+  slot: ItemTypeId[],
+  items: BoardItem[],
+  seed: number,
+): { slot: ItemTypeId[]; items: BoardItem[]; returned: ItemTypeId | null } {
+  const idx = slot.findIndex((t) => STRESS_TYPES.includes(t))
+  if (idx < 0) return { slot, items, returned: null }
+  const returned = slot[idx]!
+  const nextSlot = [...slot.slice(0, idx), ...slot.slice(idx + 1)]
+  const nextItems = cloneItems(items)
+  const alive = nextItems.filter((i) => !i.removed)
+  const maxLayer = alive.reduce((m, i) => Math.max(m, i.layer), 0)
+  const rand = mulberry32(seed)
+  nextItems.push({
+    uid: `back-${seed}-${returned}`,
+    type: returned,
+    x: 150 + rand() * 80,
+    y: 220 + rand() * 60,
+    layer: maxLayer + 3,
+    w: 64,
+    h: 64,
+    removed: false,
+  })
+  return { slot: nextSlot, items: nextItems, returned }
+}
+
+/** 热锅爆发：抬起被压块，同时把一块可点的压回去 */
+function boilBoard(
+  items: BoardItem[],
+  seed: number,
+): { items: BoardItem[]; revealed: number } {
+  const rand = mulberry32(seed)
+  const next = cloneItems(items)
+  const alive = next.filter((i) => !i.removed)
+  const maxLayer = alive.reduce((m, i) => Math.max(m, i.layer), 0)
+  const covered = alive.filter((i) => !isItemClickable(i, next))
+  const clickable = alive.filter((i) => isItemClickable(i, next))
+
+  let revealed = 0
+  if (covered.length) {
+    const lift = covered[Math.floor(rand() * covered.length)]!
+    lift.layer = maxLayer + 2
+    lift.x += (rand() - 0.5) * 24
+    lift.y += (rand() - 0.5) * 24
+    revealed = 1
+  }
+  if (clickable.length > 1) {
+    const bury = clickable[Math.floor(rand() * clickable.length)]!
+    bury.layer = Math.max(0, bury.layer - 1)
+  }
+  return { items: next, revealed }
+}
+
+export function tryPick(
+  runtime: LevelRuntime,
+  uid: string,
+  seed = Date.now(),
+): { runtime: LevelRuntime; event: EngineEvent } {
   if (runtime.status !== 'playing') {
     return { runtime, event: { type: 'noop', reason: 'not-playing' } }
   }
@@ -84,7 +161,7 @@ export function tryPick(runtime: LevelRuntime, uid: string): { runtime: LevelRun
     return { runtime, event: { type: 'blocked' } }
   }
 
-  const items = cloneItems(runtime.items)
+  let items = cloneItems(runtime.items)
   const target = items.find((i) => i.uid === uid)!
   target.removed = true
 
@@ -92,19 +169,76 @@ export function tryPick(runtime: LevelRuntime, uid: string): { runtime: LevelRun
   const elim = eliminateTriples(slot)
   slot = elim.slot
 
-  let status: LevelRuntime['status'] = 'playing'
-  let event: EngineEvent = elim.matched
-    ? { type: 'matched', itemType: elim.matched }
-    : { type: 'picked', itemType: target.type }
+  let combo = runtime.combo
+  let heat = runtime.heat
+  let shakesLeft = runtime.shakesLeft
+  let toast = pickToast(target.type, seed)
+  let hintText = runtime.hintText
+  let bonus: 'slack-clear' | 'coffee-shake' | 'boil' | undefined
+  let bonusDetail: string | undefined
+  let event: EngineEvent
 
+  if (elim.matched) {
+    combo += elim.matchCount
+    heat = Math.max(0, heat - 2)
+    if (elim.matched === 'slack') {
+      const bonusRes = applySlackBonus(slot, items, seed + 7)
+      slot = bonusRes.slot
+      items = bonusRes.items
+      if (bonusRes.returned) {
+        bonus = 'slack-clear'
+        bonusDetail = `摸鱼甩锅：${ITEM_CATALOG[bonusRes.returned].name}被甩回锅里`
+        toast = bonusDetail
+      } else {
+        toast = '摸鱼成功，餐盘里暂无压力可甩'
+      }
+    }
+    if (elim.matched === 'coffee') {
+      shakesLeft += 1
+      bonus = 'coffee-shake'
+      bonusDetail = '咖啡续命：颠锅 +1'
+      toast = bonusDetail
+    }
+    hintText = combo >= 2 ? `连消 x${combo}！` : `消掉了 ${ITEM_CATALOG[elim.matched].name}`
+    event = {
+      type: 'matched',
+      itemType: elim.matched,
+      combo,
+      bonus,
+      bonusDetail,
+    }
+  } else {
+    combo = 0
+    heat = Math.min(5, heat + (ITEM_CATALOG[target.type].vibe === 'stress' ? 2 : 1))
+    hintText =
+      heat >= 4 ? '锅要糊了！快连消降温' : `餐盘 ${slot.length}/${runtime.config.slotCapacity}`
+    event = { type: 'picked', itemType: target.type, heat }
+  }
+
+  // 热度烧满：强制洗牌一波（不耗颠锅）
+  if (heat >= 5 && runtime.status === 'playing') {
+    const boiled = boilBoard(items, seed + 99)
+    items = boiled.items
+    heat = 2
+    bonus = 'boil'
+    bonusDetail = '热锅爆发：局势被掀翻了'
+    toast = bonusDetail!
+    hintText = bonusDetail!
+    if (event.type === 'picked') {
+      event = { type: 'boiled', revealed: boiled.revealed }
+    }
+  }
+
+  let status: LevelRuntime['status'] = 'playing'
   const left = items.filter((i) => !i.removed)
   if (left.length === 0 && slot.length === 0) {
     status = 'won'
-    event = { type: 'won', line: pickWinLine(Date.now()) }
+    event = { type: 'won', line: pickWinLine(seed) }
+    hintText = '通关'
   } else if (slot.length >= runtime.config.slotCapacity) {
-    // 槽满后再检查是否刚消完仍满
     status = 'lost'
-    event = { type: 'lost', line: pickFailLine(Date.now()) }
+    event = { type: 'lost', line: pickFailLine(seed) }
+    hintText = '爆锅了'
   }
 
   return {
@@ -112,23 +246,21 @@ export function tryPick(runtime: LevelRuntime, uid: string): { runtime: LevelRun
       ...runtime,
       items,
       slot,
+      shakesLeft,
       status,
-      hintText:
-        status === 'playing'
-          ? runtime.hintText
-          : status === 'won'
-            ? '通关'
-            : '爆锅了',
+      hintText,
+      combo,
+      heat,
+      toast,
     },
     event,
   }
 }
 
-/**
- * 颠锅：对仍在场上的物体施加位置扰动，并把若干被压物体抬到顶层。
- * 返回实际新变为可点的数量，供验收。
- */
-export function shakePot(runtime: LevelRuntime, seed = Date.now()): { runtime: LevelRuntime; event: EngineEvent } {
+export function shakePot(
+  runtime: LevelRuntime,
+  seed = Date.now(),
+): { runtime: LevelRuntime; event: EngineEvent } {
   if (runtime.status !== 'playing') {
     return { runtime, event: { type: 'noop', reason: 'not-playing' } }
   }
@@ -148,15 +280,12 @@ export function shakePot(runtime: LevelRuntime, seed = Date.now()): { runtime: L
   for (const it of alive) {
     it.x += (rand() - 0.5) * 42
     it.y += (rand() - 0.5) * 42
-    // 避免颠出锅外太远
     it.x = Math.min(300, Math.max(40, it.x))
     it.y = Math.min(430, Math.max(120, it.y))
   }
 
-  // 优先抬起被压物体；至少尝试露出 4 个新目标
   const covered = alive.filter((i) => !isItemClickable(i, items))
   const liftCount = Math.min(4, covered.length)
-  // 打乱后按顺序抬，减少重复抽中同一块
   for (let i = covered.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1))
     const tmp = covered[i]!
@@ -183,7 +312,9 @@ export function shakePot(runtime: LevelRuntime, seed = Date.now()): { runtime: L
       ...runtime,
       items,
       shakesLeft: runtime.shakesLeft - 1,
+      heat: Math.max(0, runtime.heat - 1),
       hintText: revealed > 0 ? `颠出了 ${revealed} 个新目标` : '锅晃了，再找找',
+      toast: '颠锅！重新洗牌',
     },
     event: { type: 'shaken', revealed },
   }
@@ -193,7 +324,6 @@ export function addShakes(runtime: LevelRuntime, n: number): LevelRuntime {
   return { ...runtime, shakesLeft: runtime.shakesLeft + n }
 }
 
-/** 复活：清空餐盘，状态回到 playing */
 export function reviveClearSlot(runtime: LevelRuntime): { runtime: LevelRuntime; event: EngineEvent } {
   if (runtime.status !== 'lost') {
     return { runtime, event: { type: 'noop', reason: 'not-lost' } }
@@ -205,6 +335,9 @@ export function reviveClearSlot(runtime: LevelRuntime): { runtime: LevelRuntime;
       status: 'playing',
       hintText: '续命成功，稳住别浪',
       failCount: runtime.failCount,
+      heat: Math.max(0, runtime.heat - 2),
+      combo: 0,
+      toast: '广告续命，热度下降',
     },
     event: { type: 'revived' },
   }

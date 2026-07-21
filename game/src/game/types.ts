@@ -17,8 +17,11 @@ export type GamePhase = 'home' | 'playing' | 'ad' | 'fail' | 'win'
 export interface ItemDef {
   id: ItemTypeId
   name: string
+  emoji: string
   color: string
   accent: string
+  /** stress 增加热锅；relief 消除时有奖励 */
+  vibe: 'stress' | 'relief' | 'neutral'
 }
 
 export interface BoardItem {
@@ -52,6 +55,11 @@ export interface LevelRuntime {
   failCount: number
   status: 'playing' | 'won' | 'lost'
   hintText: string
+  /** 连续消除次数 */
+  combo: number
+  /** 0–5，乱点会糊锅 */
+  heat: number
+  toast: string
 }
 
 export interface AdRequest {

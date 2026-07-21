@@ -4,7 +4,6 @@ import type { LevelRuntime } from './types.ts'
 
 const W = 390
 const H = 720
-/** 底部留给 HTML 操作条，画布内容不要压过去 */
 export const CONTROLS_RESERVE = 108
 
 export function logicalSize(): { w: number; h: number } {
@@ -20,25 +19,26 @@ export function drawFrame(
 ): void {
   ctx.clearRect(0, 0, W, H)
 
+  const heatT = runtime.heat / 5
   const g = ctx.createLinearGradient(0, 0, 0, H)
   g.addColorStop(0, '#1a120b')
-  g.addColorStop(0.45, '#3b2416')
+  g.addColorStop(0.45, heatT > 0.6 ? '#5a1e12' : '#3b2416')
   g.addColorStop(1, '#120c08')
   ctx.fillStyle = g
   ctx.fillRect(0, 0, W, H)
 
-  ctx.globalAlpha = 0.15
-  ctx.fillStyle = '#fde68a'
-  for (let i = 0; i < 12; i++) {
+  ctx.globalAlpha = 0.12 + heatT * 0.12
+  ctx.fillStyle = heatT > 0.6 ? '#fb7185' : '#fde68a'
+  for (let i = 0; i < 14; i++) {
     const x = 40 + ((i * 67) % 310)
-    const y = 80 + ((i * 41) % 120) + Math.sin(shakePulse + i) * 4
+    const y = 70 + ((i * 41) % 110) + Math.sin(shakePulse + i + heatT * 3) * 5
     ctx.beginPath()
-    ctx.arc(x, y, 10 + (i % 3) * 3, 0, Math.PI * 2)
+    ctx.arc(x, y, 8 + (i % 3) * 3, 0, Math.PI * 2)
     ctx.fill()
   }
   ctx.globalAlpha = 1
 
-  drawPot(ctx, shakePulse)
+  drawPot(ctx, shakePulse, heatT)
 
   const alive = runtime.items.filter((i) => !i.removed)
   alive.sort((a, b) => a.layer - b.layer || a.y - b.y)
@@ -81,10 +81,12 @@ export function drawFrame(
     }
 
     ctx.fillStyle = clickable ? '#fff' : 'rgba(255,255,255,0.55)'
-    ctx.font = 'bold 16px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    ctx.font = '20px "Segoe UI Emoji", "Apple Color Emoji", sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(def.name, (item.w - 6) / 2, (item.h - 6) / 2)
+    ctx.fillText(def.emoji, (item.w - 6) / 2, (item.h - 6) / 2 - 10)
+    ctx.font = 'bold 13px "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    ctx.fillText(def.name, (item.w - 6) / 2, (item.h - 6) / 2 + 12)
 
     ctx.restore()
   }
@@ -92,18 +94,33 @@ export function drawFrame(
   drawSlot(ctx, runtime)
   drawHud(ctx, runtime)
 
+  if (runtime.toast) {
+    ctx.save()
+    ctx.globalAlpha = 0.95
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    roundRect(ctx, 48, 88, W - 96, 36, 12)
+    ctx.fill()
+    ctx.fillStyle = '#fde68a'
+    ctx.font = '13px "PingFang SC", "Microsoft YaHei", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(runtime.toast, W / 2, 106)
+    ctx.restore()
+  }
+
   if (matchPulse > 0) {
     ctx.save()
     ctx.globalAlpha = Math.min(1, matchPulse)
-    ctx.fillStyle = '#bbf7d0'
-    ctx.font = 'bold 28px "Segoe UI", "PingFang SC", sans-serif'
+    ctx.fillStyle = runtime.combo >= 2 ? '#fde047' : '#bbf7d0'
+    ctx.font = 'bold 30px "Segoe UI", "PingFang SC", sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('消除！', W / 2, 170)
+    const label = runtime.combo >= 2 ? `连消 x${runtime.combo}！` : '消除！'
+    ctx.fillText(label, W / 2, 168)
     ctx.restore()
   }
 }
 
-function drawPot(ctx: CanvasRenderingContext2D, shakePulse: number): void {
+function drawPot(ctx: CanvasRenderingContext2D, shakePulse: number, heatT: number): void {
   const cx = 195 + Math.sin(shakePulse * 10) * shakePulse * 4
   const cy = 278
   ctx.save()
@@ -115,15 +132,15 @@ function drawPot(ctx: CanvasRenderingContext2D, shakePulse: number): void {
   ctx.fill()
 
   const broth = ctx.createRadialGradient(0, 10, 20, 0, 20, 140)
-  broth.addColorStop(0, '#fbbf24')
-  broth.addColorStop(0.55, '#d97706')
+  broth.addColorStop(0, heatT > 0.7 ? '#fb7185' : '#fbbf24')
+  broth.addColorStop(0.55, heatT > 0.7 ? '#e11d48' : '#d97706')
   broth.addColorStop(1, '#92400e')
   ctx.fillStyle = broth
   ctx.beginPath()
   ctx.ellipse(0, 8, 140, 100, 0, 0, Math.PI * 2)
   ctx.fill()
 
-  ctx.strokeStyle = '#f59e0b'
+  ctx.strokeStyle = heatT > 0.7 ? '#fda4af' : '#f59e0b'
   ctx.lineWidth = 6
   ctx.beginPath()
   ctx.ellipse(0, 8, 140, 100, 0, 0, Math.PI * 2)
@@ -163,11 +180,13 @@ function drawSlot(ctx: CanvasRenderingContext2D, runtime: LevelRuntime): void {
     ctx.fillStyle = def.color
     roundRect(ctx, x + 3, y + 3, cell - 6, cell - 6, 8)
     ctx.fill()
-    ctx.fillStyle = '#fff'
-    ctx.font = 'bold 11px sans-serif'
+    ctx.font = '14px "Segoe UI Emoji", sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(def.name, x + cell / 2, y + cell / 2)
+    ctx.fillText(def.emoji, x + cell / 2, y + cell / 2 - 6)
+    ctx.fillStyle = '#fff'
+    ctx.font = 'bold 9px sans-serif'
+    ctx.fillText(def.name, x + cell / 2, y + cell / 2 + 10)
   }
 }
 
@@ -175,20 +194,36 @@ function drawHud(ctx: CanvasRenderingContext2D, runtime: LevelRuntime): void {
   ctx.fillStyle = '#fef3c7'
   ctx.font = 'bold 20px "Segoe UI", "PingFang SC", sans-serif'
   ctx.textAlign = 'left'
-  ctx.fillText(runtime.config.title, 18, 36)
+  ctx.fillText(runtime.config.title, 18, 32)
 
   const left = runtime.items.filter((i) => !i.removed).length
   const clickable = runtime.items.filter((i) => isItemClickable(i, runtime.items)).length
-  ctx.font = '13px sans-serif'
+  ctx.font = '12px sans-serif'
   ctx.fillStyle = '#fcd34d'
-  ctx.fillText(`剩余 ${left} · 可点 ${clickable} · 颠锅 ${runtime.shakesLeft}`, 18, 58)
+  ctx.fillText(`剩余 ${left} · 可点 ${clickable} · 颠锅 ${runtime.shakesLeft}`, 18, 52)
+
+  // 热度条
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'
+  roundRect(ctx, 18, 62, 140, 10, 6)
+  ctx.fill()
+  const heatW = (140 * runtime.heat) / 5
+  ctx.fillStyle = runtime.heat >= 4 ? '#fb7185' : '#f59e0b'
+  roundRect(ctx, 18, 62, Math.max(4, heatW), 10, 6)
+  ctx.fill()
+  ctx.fillStyle = '#fecaca'
+  ctx.font = '11px sans-serif'
+  ctx.fillText(`热度 ${runtime.heat}/5`, 164, 71)
 
   ctx.textAlign = 'right'
   ctx.fillStyle = 'rgba(254,243,199,0.9)'
-  // 提示过长时截断，避免顶栏挤爆
   const hint =
-    runtime.hintText.length > 16 ? `${runtime.hintText.slice(0, 15)}…` : runtime.hintText
-  ctx.fillText(hint, W - 18, 58)
+    runtime.hintText.length > 14 ? `${runtime.hintText.slice(0, 13)}…` : runtime.hintText
+  ctx.fillText(hint, W - 18, 52)
+  if (runtime.combo >= 2) {
+    ctx.fillStyle = '#fde047'
+    ctx.font = 'bold 13px sans-serif'
+    ctx.fillText(`COMBO x${runtime.combo}`, W - 18, 72)
+  }
 }
 
 function roundRect(
@@ -209,14 +244,8 @@ function roundRect(
   ctx.closePath()
 }
 
-export function hitTest(
-  runtime: LevelRuntime,
-  lx: number,
-  ly: number,
-): string | null {
-  // 点到操作预留区不算选中，避免误触
+export function hitTest(runtime: LevelRuntime, lx: number, ly: number): string | null {
   if (ly > H - CONTROLS_RESERVE + 20) return null
-
   const alive = runtime.items.filter((i) => !i.removed)
   alive.sort((a, b) => b.layer - a.layer || b.y - a.y)
   for (const item of alive) {

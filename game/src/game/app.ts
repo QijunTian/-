@@ -1,4 +1,5 @@
 import { adService } from './adService.ts'
+import { playSfx, unlockAudio } from './audio.ts'
 import { pickFailLine } from './copy.ts'
 import {
   addShakes,
@@ -84,7 +85,7 @@ export class GameApp {
     this.setControls(
       `
       <div class="home-panel">
-        <p>三消堆叠 · 职场压力炖一锅<br/>点亮金色边框的，才能放进餐盘</p>
+        <p>点金色块进餐盘，三个一样就消<br/>摸鱼甩压力 · 咖啡续颠锅 · 别把锅烧糊</p>
         <button data-action="start-tutorial" class="btn primary">开始试锅</button>
         <button data-action="start-challenge" class="btn ghost">直接今日挑战</button>
         <p class="meta">锅贴收集：${this.stickerCount()} 张</p>
@@ -141,6 +142,7 @@ export class GameApp {
   }
 
   private async onAction(action: string): Promise<void> {
+    unlockAudio()
     if (action === 'start-tutorial') {
       this.begin('tutorial')
       return
@@ -188,6 +190,7 @@ export class GameApp {
     const { runtime, event } = shakePot(this.runtime, Date.now())
     this.runtime = runtime
     this.shakePulse = 1
+    playSfx('shake')
     if (event.type === 'shaken') {
       this.runtime.hintText =
         event.revealed > 0 ? `颠出 ${event.revealed} 个新目标` : '锅晃了'
@@ -246,6 +249,7 @@ export class GameApp {
 
   private onPointer(e: PointerEvent): void {
     if (!this.runtime || this.phase !== 'playing') return
+    unlockAudio()
     const rect = this.canvas.getBoundingClientRect()
     const { w, h } = logicalSize()
     const lx = ((e.clientX - rect.left) / rect.width) * w
@@ -253,12 +257,13 @@ export class GameApp {
     const uid = hitTest(this.runtime, lx, ly)
     if (!uid) return
 
-    const { runtime, event } = tryPick(this.runtime, uid)
+    const { runtime, event } = tryPick(this.runtime, uid, Date.now())
     this.runtime = runtime
 
     if (event.type === 'blocked') {
       this.blockedFlashUid = uid
       this.runtime.hintText = '被压住了，先消上层或颠锅'
+      playSfx('block')
       window.setTimeout(() => {
         this.blockedFlashUid = null
       }, 220)
@@ -267,19 +272,32 @@ export class GameApp {
 
     if (event.type === 'matched') {
       this.matchPulse = 1
+      this.shakePulse = Math.min(1, 0.35 + event.combo * 0.1)
+      playSfx(event.combo >= 2 ? 'combo' : 'match', event.combo)
+      if (event.bonus === 'slack-clear' || event.bonus === 'coffee-shake') {
+        playSfx('bonus')
+      }
       const name = ITEM_CATALOG[event.itemType].name
-      this.runtime.hintText = `消掉了 ${name}`
+      this.runtime.hintText = event.bonusDetail ?? (event.combo >= 2 ? `连消 x${event.combo}` : `消掉了 ${name}`)
     }
 
     if (event.type === 'picked') {
-      const left = this.runtime.config.slotCapacity - this.runtime.slot.length
-      if (left <= 2) this.runtime.hintText = `餐盘只剩 ${left} 格`
+      playSfx('tap')
+      if (event.heat >= 4) playSfx('heat')
+    }
+
+    if (event.type === 'boiled') {
+      this.shakePulse = 1
+      this.matchPulse = 0.8
+      playSfx('heat')
+      playSfx('shake')
     }
 
     if (event.type === 'lost') {
       this.failStreak += 1
       this.lastFailLine = event.line || pickFailLine()
       this.phase = 'fail'
+      playSfx('fail')
       this.showFail()
       return
     }
@@ -289,6 +307,7 @@ export class GameApp {
       this.lastWinLine = event.line
       this.unlockSticker(`${this.mode}-${new Date().toISOString().slice(0, 10)}`)
       this.phase = 'win'
+      playSfx('win')
       this.showWin()
       return
     }
@@ -380,6 +399,9 @@ export class GameApp {
     ctx.font = '14px sans-serif'
     ctx.fillStyle = '#fde68a'
     ctx.fillText('把KPI炖了再上班', 195, 232)
+    ctx.font = '12px sans-serif'
+    ctx.fillStyle = '#fdba74'
+    ctx.fillText('连消降温 · 摸鱼甩锅 · 咖啡续命', 195, 258)
   }
 
   destroy(): void {
