@@ -1,0 +1,191 @@
+:root {
+  color: #fff7ed;
+  background:
+    radial-gradient(ellipse at 20% 0%, #5b3a1e 0%, transparent 45%),
+    radial-gradient(ellipse at 80% 20%, #7c2d12 0%, transparent 40%),
+    #120c08;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+#app {
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.phone {
+  position: relative;
+  border-radius: 28px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 2px rgba(251, 191, 36, 0.25),
+    0 24px 60px rgba(0, 0, 0, 0.55);
+  background: #1a120b;
+}
+
+#game-canvas {
+  display: block;
+  touch-action: none;
+}
+
+.controls {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.controls-play {
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(12, 8, 5, 0.72);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(251, 191, 36, 0.18);
+}
+
+.controls > * {
+  pointer-events: auto;
+}
+
+.home-panel {
+  width: 100%;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(20, 12, 8, 0.82);
+  backdrop-filter: blur(6px);
+  text-align: center;
+}
+
+.home-panel p {
+  margin: 0 0 14px;
+  color: #fde68a;
+  font-size: 14px;
+}
+
+.home-panel strong {
+  color: #fbbf24;
+}
+
+.btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #1c1008;
+  background: #f8fafc;
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, #fbbf24, #f97316);
+  color: #1c1008;
+  flex: 1 1 140px;
+}
+
+.btn.ghost {
+  background: rgba(255, 247, 237, 0.12);
+  color: #ffedd5;
+  border: 1px solid rgba(253, 230, 138, 0.35);
+  flex: 1 1 140px;
+}
+
+.btn.tiny {
+  background: transparent;
+  color: #fcd34d;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.meta {
+  opacity: 0.8;
+  font-size: 12px !important;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 5, 3, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.card {
+  width: min(320px, 100%);
+  border-radius: 20px;
+  padding: 22px 18px;
+  text-align: center;
+  background: linear-gradient(180deg, #2a1a10, #16100c);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.card h2 {
+  margin: 0 0 16px;
+  font-size: 24px;
+  line-height: 1.35;
+}
+
+.card .eyebrow {
+  margin: 0 0 8px;
+  letter-spacing: 0.2em;
+  font-size: 12px;
+  color: #fbbf24;
+}
+
+.fail-card h2 {
+  color: #fecaca;
+}
+
+.win-card h2 {
+  color: #bbf7d0;
+}
+
+.card .btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.ad-card .bar {
+  margin-top: 14px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.ad-card .bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #fbbf24, #fb7185);
+}
