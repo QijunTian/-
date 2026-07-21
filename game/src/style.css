@@ -80,16 +80,14 @@ body {
   text-align: center;
 }
 
-.home-panel h1 {
-  margin: 0 0 8px;
-  font-size: 28px;
-  letter-spacing: 0.08em;
-}
-
 .home-panel p {
   margin: 0 0 14px;
   color: #fde68a;
   font-size: 14px;
+}
+
+.home-panel strong {
+  color: #fbbf24;
 }
 
 .btn {

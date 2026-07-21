@@ -1,141 +1,108 @@
-import { adService } from './adService.ts'
 import { playSfx, unlockAudio } from './audio.ts'
-import { pickFailLine } from './copy.ts'
+import { adService } from './adService.ts'
 import {
-  addShakes,
-  reviveClearSlot,
-  shakePot,
-  startChallenge,
-  startTutorial,
-  tryPick,
-} from './engine.ts'
-import { ITEM_CATALOG } from './items.ts'
-import { drawFrame, hitTest, logicalSize } from './renderer.ts'
-import type { GamePhase, LevelRuntime } from './types.ts'
-
-const STICKER_KEY = 'moyuguod_stickers'
+  beginDrag,
+  endDrag,
+  hitItem,
+  H,
+  moveDrag,
+  POT,
+  startOvertime,
+  startShift,
+  tapPot,
+  tick,
+  W,
+  watchAdClearDesk,
+} from './sim.ts'
+import { drawSim } from './render.ts'
+import type { Phase, SimState } from './types.ts'
 
 export class GameApp {
   private root: HTMLElement
   private canvas!: HTMLCanvasElement
   private ctx!: CanvasRenderingContext2D
   private overlay!: HTMLElement
-  private runtime: LevelRuntime | null = null
-  private phase: GamePhase = 'home'
-  private blockedFlashUid: string | null = null
-  shakePulse = 0
-  private matchPulse = 0
-  private failStreak = 0
-  private lastFailLine = ''
-  private lastWinLine = ''
-  private adLabel = ''
-  private raf = 0
-  private mode: 'tutorial' | 'challenge' = 'tutorial'
+  private controls!: HTMLElement
+  private state: SimState | null = null
+  private phase: Phase = 'home'
+  private last = 0
+  private lastPos: { x: number; y: number; t: number } | null = null
+  private mode: 'shift' | 'overtime' = 'shift'
 
   constructor(root: HTMLElement) {
     this.root = root
-    this.mountShell()
+    this.mount()
     this.showHome()
-    this.loop()
+    this.last = performance.now()
+    this.loop(this.last)
   }
 
-  private mountShell(): void {
+  private mount(): void {
     this.root.innerHTML = `
       <div class="phone">
-        <canvas id="game-canvas" width="390" height="720" aria-label="摸鱼锅游戏画布"></canvas>
-        <div class="controls" id="controls"></div>
+        <canvas id="game-canvas" width="${W}" height="${H}" aria-label="摸鱼锅"></canvas>
+        <div class="controls controls-home" id="controls"></div>
         <div class="overlay hidden" id="overlay"></div>
       </div>
     `
     this.canvas = this.root.querySelector('#game-canvas')!
     this.ctx = this.canvas.getContext('2d')!
+    this.controls = this.root.querySelector('#controls')!
     this.overlay = this.root.querySelector('#overlay')!
-    this.canvas.addEventListener('pointerdown', (e) => this.onPointer(e))
-    window.addEventListener('resize', () => this.fitCanvas())
-    this.fitCanvas()
+    this.canvas.addEventListener('pointerdown', (e) => this.onDown(e))
+    this.canvas.addEventListener('pointermove', (e) => this.onMove(e))
+    this.canvas.addEventListener('pointerup', (e) => this.onUp(e))
+    this.canvas.addEventListener('pointercancel', (e) => this.onUp(e))
+    window.addEventListener('resize', () => this.fit())
+    this.fit()
   }
 
-  private fitCanvas(): void {
-    const { w, h } = logicalSize()
+  private fit(): void {
     const phone = this.root.querySelector('.phone') as HTMLElement
     const maxW = Math.min(390, window.innerWidth - 24)
-    const scale = maxW / w
-    phone.style.width = `${w * scale}px`
-    phone.style.height = `${h * scale}px`
+    const scale = maxW / W
+    phone.style.width = `${W * scale}px`
+    phone.style.height = `${H * scale}px`
     this.canvas.style.width = '100%'
     this.canvas.style.height = '100%'
   }
 
-  private setControls(html: string, mode: 'home' | 'play' | 'none' = 'none'): void {
-    const el = this.root.querySelector('#controls')!
-    el.className = `controls controls-${mode}`
-    el.innerHTML = html
-    el.querySelectorAll('[data-action]').forEach((btn) => {
+  private setControls(html: string, mode: 'home' | 'play' | 'none'): void {
+    this.controls.className = `controls controls-${mode}`
+    this.controls.innerHTML = html
+    this.controls.querySelectorAll('[data-action]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const action = (btn as HTMLElement).dataset.action
-        void this.onAction(action ?? '')
+        void this.onAction((btn as HTMLElement).dataset.action ?? '')
       })
     })
   }
 
   private showHome(): void {
     this.phase = 'home'
-    this.runtime = null
+    this.state = null
     this.hideOverlay()
     this.setControls(
       `
       <div class="home-panel">
-        <p>点金色块进餐盘，三个一样就消<br/>摸鱼甩压力 · 咖啡续颠锅 · 别把锅烧糊</p>
-        <button data-action="start-tutorial" class="btn primary">开始试锅</button>
-        <button data-action="start-challenge" class="btn ghost">直接今日挑战</button>
-        <p class="meta">锅贴收集：${this.stickerCount()} 张</p>
+        <p>别消方块了。<br/>把上班压力<strong>甩进锅里炖掉</strong>，看桌面变干净。</p>
+        <button class="btn primary" data-action="start-shift">开始这一班</button>
+        <button class="btn ghost" data-action="start-overtime">加班局</button>
+        <p class="meta">学爆款的解压感：扔出去 · 变整洁 · 有完成感</p>
       </div>
     `,
       'home',
     )
   }
 
-
-  private stickerCount(): number {
-    try {
-      const raw = localStorage.getItem(STICKER_KEY)
-      if (!raw) return 0
-      return (JSON.parse(raw) as string[]).length
-    } catch {
-      return 0
-    }
-  }
-
-  private unlockSticker(id: string): void {
-    try {
-      const raw = localStorage.getItem(STICKER_KEY)
-      const list: string[] = raw ? (JSON.parse(raw) as string[]) : []
-      if (!list.includes(id)) {
-        list.push(id)
-        localStorage.setItem(STICKER_KEY, JSON.stringify(list))
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  private begin(mode: 'tutorial' | 'challenge'): void {
+  private begin(mode: 'shift' | 'overtime'): void {
     this.mode = mode
     this.phase = 'playing'
-    this.runtime =
-      mode === 'tutorial'
-        ? startTutorial(Date.now(), this.failStreak)
-        : startChallenge(Date.now() + 7, this.failStreak)
-    this.overlay.classList.add('hidden')
-    this.renderPlayingControls()
-  }
-
-  private renderPlayingControls(): void {
+    this.state = mode === 'shift' ? startShift(Date.now()) : startOvertime(Date.now() + 3)
+    this.hideOverlay()
     this.setControls(
       `
-      <button data-action="shake" class="btn primary">颠锅 (${this.runtime?.shakesLeft ?? 0})</button>
-      <button data-action="ad-shake" class="btn ghost">看广告+2颠锅</button>
-      <button data-action="home" class="btn tiny">回首页</button>
+      <button class="btn primary" data-action="stir">点锅加速炖</button>
+      <button class="btn ghost" data-action="home">回首页</button>
     `,
       'play',
     )
@@ -143,91 +110,62 @@ export class GameApp {
 
   private async onAction(action: string): Promise<void> {
     unlockAudio()
-    if (action === 'start-tutorial') {
-      this.begin('tutorial')
+    if (action === 'start-shift') {
+      this.begin('shift')
       return
     }
-    if (action === 'start-challenge') {
-      this.begin('challenge')
+    if (action === 'start-overtime') {
+      this.begin('overtime')
       return
     }
     if (action === 'home') {
       this.showHome()
       return
     }
+    if (action === 'stir' && this.state) {
+      this.state = tapPot(this.state)
+      playSfx('stir')
+      if (this.state.toast.includes('化了') || this.state.toast.includes('清蒸')) playSfx('burst')
+      this.afterSim()
+      return
+    }
     if (action === 'retry') {
       this.begin(this.mode)
       return
     }
-    if (action === 'next-challenge') {
-      this.begin('challenge')
-      return
-    }
-    if (action === 'shake') {
-      this.doShake()
-      return
-    }
-    if (action === 'ad-shake') {
-      await this.watchAd('extra_shake')
-      return
-    }
     if (action === 'revive') {
-      await this.watchAd('revive')
-      return
+      await this.adRevive()
     }
   }
 
-  private doShake(): void {
-    if (!this.runtime || this.phase !== 'playing') return
-    if (this.runtime.shakesLeft <= 0) {
-      this.runtime = {
-        ...this.runtime,
-        hintText: '颠锅次数用尽，可看广告补充',
-      }
-      this.renderPlayingControls()
-      return
-    }
-    const { runtime, event } = shakePot(this.runtime, Date.now())
-    this.runtime = runtime
-    this.shakePulse = 1
-    playSfx('shake')
-    if (event.type === 'shaken') {
-      this.runtime.hintText =
-        event.revealed > 0 ? `颠出 ${event.revealed} 个新目标` : '锅晃了'
-    }
-    this.renderPlayingControls()
-  }
-
-  private async watchAd(reason: 'revive' | 'extra_shake'): Promise<void> {
-    if (adService.isBusy()) return
+  private async adRevive(): Promise<void> {
+    if (!this.state || adService.isBusy()) return
     this.phase = 'ad'
-    this.adLabel = reason === 'revive' ? '激励广告：复活续命' : '激励广告：补充颠锅'
-    this.showAdOverlay(0)
-
-    const ok = await adService.watchRewarded(
-      { reason, durationMs: 2800 },
-      ({ progress }) => this.showAdOverlay(progress),
-    )
-
-    if (!ok || !this.runtime) {
-      this.phase = this.runtime?.status === 'lost' ? 'fail' : 'playing'
+    this.overlay.classList.remove('hidden')
+    const ok = await adService.watchRewarded({ reason: 'revive', durationMs: 2800 }, ({ progress }) => {
+      const pct = Math.floor(progress * 100)
+      this.overlay.innerHTML = `
+        <div class="card ad-card">
+          <h2>激励广告：桌面减负</h2>
+          <p>真实等待中… ${pct}%</p>
+          <div class="bar"><i style="width:${pct}%"></i></div>
+        </div>`
+    })
+    if (!ok || !this.state) {
+      this.phase = 'fail'
       return
     }
-
-    if (reason === 'extra_shake') {
-      this.runtime = addShakes(this.runtime, 2)
-      this.phase = 'playing'
-      this.hideOverlay()
-      this.renderPlayingControls()
-      return
-    }
-
-    // revive
-    const result = reviveClearSlot(this.runtime)
-    this.runtime = result.runtime
+    this.state = watchAdClearDesk(this.state)
     this.phase = 'playing'
     this.hideOverlay()
-    this.renderPlayingControls()
+    this.setControls(
+      `
+      <button class="btn primary" data-action="stir">点锅加速炖</button>
+      <button class="btn ghost" data-action="home">回首页</button>
+    `,
+      'play',
+    )
+    playSfx('splash')
   }
 
   private hideOverlay(): void {
@@ -235,97 +173,86 @@ export class GameApp {
     this.overlay.innerHTML = ''
   }
 
-  private showAdOverlay(progress: number): void {
-    this.overlay.classList.remove('hidden')
-    const pct = Math.floor(progress * 100)
-    this.overlay.innerHTML = `
-      <div class="card ad-card">
-        <h2>${this.adLabel}</h2>
-        <p>真实等待中，不可跳过…… ${pct}%</p>
-        <div class="bar"><i style="width:${pct}%"></i></div>
-      </div>
-    `
+  private toLocal(e: PointerEvent): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect()
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * W,
+      y: ((e.clientY - rect.top) / rect.height) * H,
+    }
   }
 
-  private onPointer(e: PointerEvent): void {
-    if (!this.runtime || this.phase !== 'playing') return
+  private onDown(e: PointerEvent): void {
+    if (!this.state || this.phase !== 'playing') return
     unlockAudio()
-    const rect = this.canvas.getBoundingClientRect()
-    const { w, h } = logicalSize()
-    const lx = ((e.clientX - rect.left) / rect.width) * w
-    const ly = ((e.clientY - rect.top) / rect.height) * h
-    const uid = hitTest(this.runtime, lx, ly)
-    if (!uid) return
-
-    const { runtime, event } = tryPick(this.runtime, uid, Date.now())
-    this.runtime = runtime
-
-    if (event.type === 'blocked') {
-      this.blockedFlashUid = uid
-      this.runtime.hintText = '被压住了，先消上层或颠锅'
-      playSfx('block')
-      window.setTimeout(() => {
-        this.blockedFlashUid = null
-      }, 220)
+    this.canvas.setPointerCapture(e.pointerId)
+    const { x, y } = this.toLocal(e)
+    // 点锅
+    if (inPotTouch(x, y)) {
+      this.state = tapPot(this.state)
+      playSfx('stir')
+      if (this.state.toast.includes('化了') || this.state.toast.includes('清蒸')) playSfx('burst')
+      this.afterSim()
       return
     }
+    const item = hitItem(this.state, x, y)
+    if (!item) return
+    this.state = beginDrag(this.state, item.uid)
+    this.lastPos = { x, y, t: performance.now() }
+    playSfx('grab')
+  }
 
-    if (event.type === 'matched') {
-      this.matchPulse = 1
-      this.shakePulse = Math.min(1, 0.35 + event.combo * 0.1)
-      playSfx(event.combo >= 2 ? 'combo' : 'match', event.combo)
-      if (event.bonus === 'slack-clear' || event.bonus === 'coffee-shake') {
-        playSfx('bonus')
-      }
-      const name = ITEM_CATALOG[event.itemType].name
-      this.runtime.hintText = event.bonusDetail ?? (event.combo >= 2 ? `连消 x${event.combo}` : `消掉了 ${name}`)
-    }
+  private onMove(e: PointerEvent): void {
+    if (!this.state || !this.state.dragUid) return
+    const { x, y } = this.toLocal(e)
+    this.state = moveDrag(this.state, x, y)
+    this.lastPos = { x, y, t: performance.now() }
+  }
 
-    if (event.type === 'picked') {
-      playSfx('tap')
-      if (event.heat >= 4) playSfx('heat')
-    }
+  private onUp(e: PointerEvent): void {
+    if (!this.state || !this.state.dragUid) return
+    const { x, y } = this.toLocal(e)
+    const prev = this.lastPos ?? { x, y, t: performance.now() }
+    const dt = Math.max(16, performance.now() - prev.t)
+    const vx = ((x - prev.x) / dt) * 0.8
+    const vy = ((y - prev.y) / dt) * 0.8
+    const { state, event } = endDrag(this.state, x, y, vx, vy)
+    this.state = state
+    this.lastPos = null
+    if (event === 'throw-in') playSfx('splash')
+    else if (event === 'throw-miss') playSfx('miss')
+    this.afterSim()
+  }
 
-    if (event.type === 'boiled') {
-      this.shakePulse = 1
-      this.matchPulse = 0.8
-      playSfx('heat')
-      playSfx('shake')
-    }
-
-    if (event.type === 'lost') {
-      this.failStreak += 1
-      this.lastFailLine = event.line || pickFailLine()
+  private afterSim(): void {
+    if (!this.state) return
+    if (this.state.status === 'won') {
+      this.phase = 'clear'
+      playSfx('win')
+      this.showEnd(true)
+    } else if (this.state.status === 'lost') {
       this.phase = 'fail'
       playSfx('fail')
-      this.showFail()
-      return
+      this.showEnd(false)
     }
-
-    if (event.type === 'won') {
-      this.failStreak = 0
-      this.lastWinLine = event.line
-      this.unlockSticker(`${this.mode}-${new Date().toISOString().slice(0, 10)}`)
-      this.phase = 'win'
-      playSfx('win')
-      this.showWin()
-      return
-    }
-
-    this.renderPlayingControls()
   }
 
-  private showFail(): void {
+  private showEnd(won: boolean): void {
     this.overlay.classList.remove('hidden')
-    this.overlay.innerHTML = `
-      <div class="card fail-card">
-        <p class="eyebrow">爆锅</p>
-        <h2>${this.lastFailLine}</h2>
-        <button data-action="revive" class="btn primary">看广告复活（清空餐盘）</button>
-        <button data-action="retry" class="btn ghost">重开本关</button>
-        <button data-action="home" class="btn tiny">回首页</button>
-      </div>
-    `
+    this.overlay.innerHTML = won
+      ? `<div class="card win-card">
+          <p class="eyebrow">下班</p>
+          <h2>${this.state?.toast ?? '清爽了'}</h2>
+          <p class="meta">爆发 ${this.state?.bursts ?? 0} 次 · 炖掉 ${this.state?.cleared ?? 0} 份压力</p>
+          <button class="btn primary" data-action="retry">再来一班</button>
+          <button class="btn ghost" data-action="home">回首页</button>
+        </div>`
+      : `<div class="card fail-card">
+          <p class="eyebrow">被淹没</p>
+          <h2>${this.state?.toast ?? '桌面炸了'}</h2>
+          <button class="btn primary" data-action="revive">看广告减负续命</button>
+          <button class="btn ghost" data-action="retry">重开</button>
+          <button class="btn tiny" data-action="home">回首页</button>
+        </div>`
     this.overlay.querySelectorAll('[data-action]').forEach((btn) => {
       btn.addEventListener('click', () => {
         void this.onAction((btn as HTMLElement).dataset.action ?? '')
@@ -334,77 +261,47 @@ export class GameApp {
     this.setControls('', 'none')
   }
 
-  private showWin(): void {
-    this.overlay.classList.remove('hidden')
-    const next =
-      this.mode === 'tutorial'
-        ? `<button data-action="next-challenge" class="btn primary">进入今日挑战</button>`
-        : `<button data-action="retry" class="btn primary">再炖一锅</button>`
-    this.overlay.innerHTML = `
-      <div class="card win-card">
-        <p class="eyebrow">通关</p>
-        <h2>${this.lastWinLine}</h2>
-        <p class="meta">已收入锅贴 · 当前 ${this.stickerCount()} 张</p>
-        ${next}
-        <button data-action="home" class="btn ghost">回首页</button>
-      </div>
-    `
-    this.overlay.querySelectorAll('[data-action]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        void this.onAction((btn as HTMLElement).dataset.action ?? '')
-      })
-    })
-    this.setControls('', 'none')
+  private loop = (now: number): void => {
+    const dt = Math.min(0.033, (now - this.last) / 1000)
+    this.last = now
+    if (this.phase === 'playing' && this.state) {
+      const before = this.state.bursts
+      const beforeSpawned = this.state.spawned
+      this.state = tick(this.state, dt)
+      if (this.state.bursts > before) playSfx('burst')
+      if (this.state.spawned > beforeSpawned) playSfx('spawn')
+      this.afterSim()
+    }
+
+    if (this.phase === 'home') this.drawHome()
+    else if (this.state) drawSim(this.ctx, this.state)
+
+    requestAnimationFrame(this.loop)
   }
 
-  private loop = (): void => {
-    if (this.shakePulse > 0) {
-      this.shakePulse = Math.max(0, this.shakePulse - 0.04)
-    }
-    if (this.matchPulse > 0) {
-      this.matchPulse = Math.max(0, this.matchPulse - 0.05)
-    }
-
-    if (this.phase === 'home') {
-      this.drawHomeBackdrop()
-    } else if (this.runtime) {
-      drawFrame(
-        this.ctx,
-        this.runtime,
-        this.blockedFlashUid,
-        this.shakePulse,
-        this.matchPulse,
-      )
-    }
-
-    this.raf = requestAnimationFrame(this.loop)
-  }
-
-  private drawHomeBackdrop(): void {
-    const { w, h } = logicalSize()
+  private drawHome(): void {
     const ctx = this.ctx
-    const g = ctx.createLinearGradient(0, 0, 0, h)
+    const g = ctx.createLinearGradient(0, 0, 0, H)
     g.addColorStop(0, '#2b1810')
     g.addColorStop(1, '#0f0a07')
     ctx.fillStyle = g
-    ctx.fillRect(0, 0, w, h)
+    ctx.fillRect(0, 0, W, H)
     ctx.fillStyle = '#fbbf24'
     ctx.beginPath()
-    ctx.ellipse(195, 340, 140, 100, 0, 0, Math.PI * 2)
+    ctx.ellipse(POT.cx, 360, 130, 90, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.fillStyle = '#fff7ed'
-    ctx.font = 'bold 36px "Segoe UI", "PingFang SC", sans-serif'
+    ctx.font = 'bold 40px "PingFang SC", sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('摸鱼锅', 195, 200)
-    ctx.font = '14px sans-serif'
+    ctx.fillText('摸鱼锅', W / 2, 190)
+    ctx.font = '14px "PingFang SC", sans-serif'
     ctx.fillStyle = '#fde68a'
-    ctx.fillText('把KPI炖了再上班', 195, 232)
-    ctx.font = '12px sans-serif'
-    ctx.fillStyle = '#fdba74'
-    ctx.fillText('连消降温 · 摸鱼甩锅 · 咖啡续命', 195, 258)
+    ctx.fillText('把压力炖了，不是把方块消了', W / 2, 228)
   }
+}
 
-  destroy(): void {
-    cancelAnimationFrame(this.raf)
-  }
+function inPotTouch(x: number, y: number): boolean {
+  const dx = (x - POT.cx) / (POT.rx + 10)
+  const dy = (y - POT.cy) / (POT.ry + 10)
+  return dx * dx + dy * dy <= 1
 }
