@@ -19,7 +19,22 @@
 4. 写入最小`.env`（自选股含口子窖`603589`）
 5. `--dry-run`已拉取行情入库（口子窖最新约`19.56`，`2026-07-23`跌约`2.05%`）
 
-## 快速启动
+## Windows 本机一键启动（推荐）
+
+前置：安装 [Python 3.10+](https://www.python.org/downloads/)（勾选Add to PATH）、[Git](https://git-scm.com/download/win)；完整页面再装 [Node.js LTS](https://nodejs.org/)。
+
+把本仓库拉到本机后，任选其一：
+
+```powershell
+# PowerShell
+powershell -ExecutionPolicy Bypass -File scripts\run_daily_stock_analysis.ps1
+```
+
+或资源管理器双击：`scripts\run_daily_stock_analysis.bat`
+
+浏览器打开：`http://127.0.0.1:8001`
+
+## Linux / macOS 快速启动
 
 ```bash
 bash scripts/run_daily_stock_analysis.sh
