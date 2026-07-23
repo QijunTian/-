@@ -1,0 +1,28 @@
+# 工作区忽略规则
+
+# daily_stock_analysis 本地克隆与运行产物（仓库内自带 .git，不纳入本仓版本）
+daily_stock_analysis/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 环境密钥
+.env
+**/.env
+
+# 日志与数据
+*.log
+logs/
+data/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
